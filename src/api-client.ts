@@ -6,19 +6,8 @@ import axios, { AxiosInstance, AxiosError } from "axios"
 export class ApiClient {
   private axiosInstance: AxiosInstance
 
-  /**
-   * Create a new API client
-   *
-   * @param baseUrl - Base URL for the API
-   * @param headers - Optional headers to include with every request
-   */
-  constructor(
-    baseUrl: string,
-    private headers: Record<string, string> = {},
-  ) {
-    this.axiosInstance = axios.create({
-      baseURL: baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`,
-    })
+  constructor() {
+    this.axiosInstance = axios.create({})
   }
 
   /**
@@ -28,7 +17,7 @@ export class ApiClient {
    * @param params - Parameters for the API call
    * @returns The API response data
    */
-  async executeApiCall(toolId: string, params: Record<string, any>): Promise<any> {
+  async executeApiCall(toolId: string, params: Record<string, any>, url: string, headers: string): Promise<any> {
     try {
       // Parse method and path from the tool ID
       const { method, path } = this.parseToolId(toolId)
@@ -36,8 +25,9 @@ export class ApiClient {
       // Prepare request configuration
       const config: any = {
         method: method.toLowerCase(),
+        baseURL: url,
         url: path,
-        headers: this.headers,
+        headers: headers,
       }
 
       // Handle parameters based on HTTP method

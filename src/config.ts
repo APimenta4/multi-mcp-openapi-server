@@ -4,9 +4,7 @@ import { hideBin } from "yargs/helpers"
 export interface OpenAPIMCPServerConfig {
   name: string
   version: string
-  apiBaseUrl: string
   specsDirectory: string
-  headers?: Record<string, string>
   transportType: "stdio" | "http"
   httpPort?: number
   httpHost?: string
@@ -51,20 +49,10 @@ export function loadConfig(): OpenAPIMCPServerConfig {
       type: "string",
       description: "HTTP endpoint path for HTTP transport",
     })
-    .option("api-base-url", {
-      alias: "u",
-      type: "string",
-      description: "Base URL for the API",
-    })
     .option("specs-dir", {
       alias: "s",
       type: "string",
       description: "Path to directory containing OpenAPI specifications",
-    })
-    .option("headers", {
-      alias: "H",
-      type: "string",
-      description: "API headers in format 'key1:value1,key2:value2'",
     })
     .option("name", {
       alias: "n",
@@ -93,24 +81,16 @@ export function loadConfig(): OpenAPIMCPServerConfig {
   const endpointPath = argv.path || process.env.ENDPOINT_PATH || "/mcp"
 
   // Combine CLI args and env vars, with CLI taking precedence
-  const apiBaseUrl = argv["api-base-url"] || process.env.API_BASE_URL
   const specsDirectory = argv["specs-dir"] || process.env.OPENAPI_SPECS_PATH
 
-  if (!apiBaseUrl) {
-    throw new Error("API base URL is required (--api-base-url or API_BASE_URL)")
-  }
   if (!specsDirectory) {
-    throw new Error("OpenAPI spec is required (--specs-dir or OPENAPI_SPECS_PATH)")
+    throw new Error("OpenAPI specs directory is required (--specs-dir or OPENAPI_SPECS_PATH)")
   }
-
-  const headers = parseHeaders(argv.headers || process.env.API_HEADERS)
 
   return {
     name: argv.name || process.env.SERVER_NAME || "mcp-openapi-server",
     version: argv.version || process.env.SERVER_VERSION || "1.0.0",
-    apiBaseUrl,
     specsDirectory,
-    headers,
     transportType,
     httpPort,
     httpHost,

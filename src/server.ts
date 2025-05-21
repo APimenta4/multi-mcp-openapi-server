@@ -26,7 +26,7 @@ export class OpenAPIServer {
       },
     )
     this.toolsManager = new ToolsManager(config)
-    this.apiClient = new ApiClient(config.apiBaseUrl, config.headers)
+    this.apiClient = new ApiClient()
     this.initializeHandlers()
   }
 
@@ -69,7 +69,7 @@ export class OpenAPIServer {
 
       try {
         // Execute the API call
-        const result = await this.apiClient.executeApiCall(toolId, params || {})
+        const result = await this.apiClient.executeApiCall(toolId, params || {}, tool.url as string, tool.headers as string)
 
         return {
           content: [

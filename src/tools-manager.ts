@@ -21,12 +21,16 @@ export class ToolsManager {
 
     for (const [providerName, spec] of specs.entries()) {
       // Parse tools from each OpenAPI specification
-      const parsedTools = this.specLoader.parseOpenAPISpec(spec)
+      // spec should be the first element in the touple
+      const skibidi = spec[0]
+      const parsedTools = this.specLoader.parseOpenAPISpec(providerName, spec)
 
       // Add tools to the manager
       for (const [toolId, tool] of parsedTools.entries()) {
         this.tools.set(toolId, tool)
         console.log(`[${providerName}] Added tool: ${toolId} (${tool.name})`)
+        // print all "tool" attributes
+        console.log(`[${providerName}] Tool attributes: ${JSON.stringify(tool, null, 2)}`)
       }
     }
   }

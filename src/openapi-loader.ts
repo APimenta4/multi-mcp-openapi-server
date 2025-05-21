@@ -13,8 +13,8 @@ export class OpenAPISpecLoader {
   /**
    * Load an OpenAPI specification from a file path or URL
    */
-  async loadOpenAPISpec(specDirPath: string): Promise<Map<string, OpenAPIV3.Document>> {
-    const specs = new Map<string, OpenAPIV3.Document>();
+  async loadOpenAPISpec(specDirPath: string): Promise<Map<string, [OpenAPIV3.Document, string]>> {
+    const specs = new Map<string, [OpenAPIV3.Document, string]>();
 
     try {
       const stats = await stat(specDirPath);
@@ -51,6 +51,7 @@ export class OpenAPISpecLoader {
             break; // Found and successfully parsed a file
           } catch (error) {
             // File doesn't exist or couldn't be parsed, continue to next format
+            console.log("HERE" + error)
             continue;
           }
         }
@@ -61,8 +62,22 @@ export class OpenAPISpecLoader {
           continue;
         }
 
-        // Add the spec to our collection
-        specs.set(providerName, spec);
+        // Get headers from config.json
+        let headers
+        const configFilePath = path.join(providerDir, 'config.json');
+        try {
+          await access(configFilePath);
+          const configContent = await readFile(configFilePath, 'utf-8');
+          const config = JSON.parse(configContent);
+          if (config.headers) {
+             headers = config.headers;
+          }
+        } catch (error) {
+          console.warn(`No config.json file found for ${providerName}`);
+        }
+
+        // Add the spec to our collection with potentially undefined headers
+        specs.set(providerName, [spec, headers]);
       }
 
       if (specs.size === 0) {
@@ -78,8 +93,10 @@ export class OpenAPISpecLoader {
   /**
    * Parse an OpenAPI specification into a map of tools
    */
-  parseOpenAPISpec(spec: OpenAPIV3.Document): Map<string, Tool> {
+  parseOpenAPISpec(providerName: string, receivedTool: [OpenAPIV3.Document, string]): Map<string, Tool> {
     const tools = new Map<string, Tool>()
+
+    const spec = receivedTool[0]
 
     // Convert each OpenAPI path to an MCP tool
     for (const [path, pathItem] of Object.entries(spec.paths)) {
@@ -100,12 +117,20 @@ export class OpenAPISpecLoader {
         const toolId = `${method.toUpperCase()}-${cleanPath}`.replace(/[^a-zA-Z0-9-]/g, "-")
 
         let nameSource = op.operationId || op.summary || `${method.toUpperCase()} ${path}`
-        // TODO: Change tool name to avoid conflicts (add OPENAPI spec name prefix)
         const name = this.abbreviateOperationId(nameSource)
-
+        
+        if (!spec.servers?.length) {
+          throw new Error(`No server url defined in OpenAPI specification for provider ${providerName}`);
+        }
+        const url = spec.servers[0].url
+        
         const tool: Tool = {
-          name,
+          // Prefix with provider name to avoid tool naming conflicts
+          name: `${providerName}-${name}`,
+          // TODO: url and headers doesnt belong in Tool. find a better way to do this
+          url,
           description: op.description || `Make a ${method.toUpperCase()} request to ${path}`,
+          headers: receivedTool[1],
           inputSchema: {
             type: "object",
             properties: {},
