@@ -138,19 +138,8 @@ export class OpenAPISpecsLoader {
         const cleanPath = path.replace(/^\//, "").replace(/\{([^}]+)\}/g, "$1")
         const toolId = `${method.toUpperCase()}-${cleanPath}`.replace(/[^a-zA-Z0-9-]/g, "-")
 
-        let nameSource = op.operationId || op.summary || `${method.toUpperCase()} ${path}`
+        let nameSource = op.operationId || `${method.toUpperCase()} ${path}`
         const name = this.abbreviateOperationId(nameSource)
-
-        // const tool: Tool = {
-        //   // Prefix with provider name to avoid tool naming conflicts
-        //   // This is the name provided to the AI Agents
-        //   name: `${providerName}-${name}`,
-        //   description: op.description || `Make a ${method.toUpperCase()} request to ${path}`,
-        //   inputSchema: {
-        //     type: "object",
-        //     properties: {},
-        //   },
-        // }
 
         const tool: ExtendedTool = {
           // Prefix with provider name to avoid tool naming conflicts
