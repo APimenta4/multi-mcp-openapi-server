@@ -5,7 +5,7 @@ export interface OpenAPIMCPServerConfig {
   name: string
   version: string
   apiBaseUrl: string
-  openApiSpec: string
+  specsDirectory: string
   headers?: Record<string, string>
   transportType: "stdio" | "http"
   httpPort?: number
@@ -56,10 +56,10 @@ export function loadConfig(): OpenAPIMCPServerConfig {
       type: "string",
       description: "Base URL for the API",
     })
-    .option("openapi-spec", {
+    .option("specs-dir", {
       alias: "s",
       type: "string",
-      description: "Path or URL to OpenAPI specification",
+      description: "Path to directory containing OpenAPI specifications",
     })
     .option("headers", {
       alias: "H",
@@ -94,13 +94,13 @@ export function loadConfig(): OpenAPIMCPServerConfig {
 
   // Combine CLI args and env vars, with CLI taking precedence
   const apiBaseUrl = argv["api-base-url"] || process.env.API_BASE_URL
-  const openApiSpec = argv["openapi-spec"] || process.env.OPENAPI_SPEC_PATH
+  const specsDirectory = argv["specs-dir"] || process.env.OPENAPI_SPECS_PATH
 
   if (!apiBaseUrl) {
     throw new Error("API base URL is required (--api-base-url or API_BASE_URL)")
   }
-  if (!openApiSpec) {
-    throw new Error("OpenAPI spec is required (--openapi-spec or OPENAPI_SPEC_PATH)")
+  if (!specsDirectory) {
+    throw new Error("OpenAPI spec is required (--specs-dir or OPENAPI_SPECS_PATH)")
   }
 
   const headers = parseHeaders(argv.headers || process.env.API_HEADERS)
@@ -109,7 +109,7 @@ export function loadConfig(): OpenAPIMCPServerConfig {
     name: argv.name || process.env.SERVER_NAME || "mcp-openapi-server",
     version: argv.version || process.env.SERVER_VERSION || "1.0.0",
     apiBaseUrl,
-    openApiSpec,
+    specsDirectory,
     headers,
     transportType,
     httpPort,

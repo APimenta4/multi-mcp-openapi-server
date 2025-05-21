@@ -17,12 +17,17 @@ export class ToolsManager {
    * Initialize tools from the OpenAPI specification
    */
   async initialize(): Promise<void> {
-    const spec = await this.specLoader.loadOpenAPISpec(this.config.openApiSpec)
-    this.tools = this.specLoader.parseOpenAPISpec(spec)
+    const specs = await this.specLoader.loadOpenAPISpec(this.config.specsDirectory)
 
-    // Log the registered tools
-    for (const [toolId, tool] of this.tools.entries()) {
-      console.error(`Registered tool: ${toolId} (${tool.name})`)
+    for (const [providerName, spec] of specs.entries()) {
+      // Parse tools from each OpenAPI specification
+      const parsedTools = this.specLoader.parseOpenAPISpec(spec)
+
+      // Add tools to the manager
+      for (const [toolId, tool] of parsedTools.entries()) {
+        this.tools.set(toolId, tool)
+        console.log(`[${providerName}] Added tool: ${toolId} (${tool.name})`)
+      }
     }
   }
 
@@ -30,6 +35,7 @@ export class ToolsManager {
    * Get all available tools
    */
   getAllTools(): Tool[] {
+
     return Array.from(this.tools.values())
   }
 

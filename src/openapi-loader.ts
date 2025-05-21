@@ -1,8 +1,9 @@
 import { OpenAPIV3 } from "openapi-types"
-import { readFile } from "fs/promises"
+import { readFile, stat, readdir, access } from "fs/promises"
 import { Tool } from "@modelcontextprotocol/sdk/types.js"
 import yaml from "js-yaml"
 import crypto from "crypto"
+import path from "path"
 import { REVISED_COMMON_WORDS_TO_REMOVE, WORD_ABBREVIATIONS } from "./abbreviations.js"
 
 /**
@@ -12,31 +13,65 @@ export class OpenAPISpecLoader {
   /**
    * Load an OpenAPI specification from a file path or URL
    */
-  async loadOpenAPISpec(specPathOrUrl: string): Promise<OpenAPIV3.Document> {
-    let specContent: string
-    if (specPathOrUrl.startsWith("http://") || specPathOrUrl.startsWith("https://")) {
-      const response = await fetch(specPathOrUrl)
-      if (!response.ok) {
-        throw new Error(`Failed to fetch OpenAPI spec from URL: ${specPathOrUrl}`)
-      }
-      specContent = await response.text()
-    } else {
-      specContent = await readFile(specPathOrUrl, "utf-8")
-    }
+  async loadOpenAPISpec(specDirPath: string): Promise<Map<string, OpenAPIV3.Document>> {
+    const specs = new Map<string, OpenAPIV3.Document>();
 
-    // Attempt to parse as JSON, then YAML if JSON parsing fails
     try {
-      return JSON.parse(specContent) as OpenAPIV3.Document
-    } catch (jsonError) {
-      try {
-        return yaml.load(specContent) as OpenAPIV3.Document
-      } catch (yamlError) {
-        throw new Error(
-          `Failed to parse OpenAPI spec as JSON or YAML: ${
-            (jsonError as Error).message
-          } | ${(yamlError as Error).message}`,
-        )
+      const stats = await stat(specDirPath);
+      if (!stats.isDirectory()) {
+        throw new Error(`${specDirPath} is not a directory`);
       }
+
+      // Get all provider directories
+      const entries = await readdir(specDirPath, { withFileTypes: true });
+      const subdirs = entries.filter(entry => entry.isDirectory());
+      if (subdirs.length === 0) {
+        throw new Error(`No provider directories found in ${specDirPath}`);
+      }
+
+      const specFormats = [
+        { extension: 'json', parse: (content: string) => JSON.parse(content) },
+        { extension: 'yaml', parse: (content: string) => yaml.load(content) },
+        { extension: 'yml', parse: (content: string) => yaml.load(content) }
+      ];
+
+      // Process each subdirectory
+      for (const subdir of subdirs) {
+        const providerName = subdir.name;
+        const providerDir = path.join(specDirPath, providerName);
+
+        let spec: OpenAPIV3.Document | null = null;
+
+        // Try each format until we find one that works (json, yaml, yml)
+        for (const format of specFormats){
+          const filePath = path.join(providerDir, `specification.${format.extension}`);
+          try {
+            const content = await readFile(filePath, 'utf-8');
+            spec = format.parse(content) as OpenAPIV3.Document;
+            break; // Found and successfully parsed a file
+          } catch (error) {
+            // File doesn't exist or couldn't be parsed, continue to next format
+            continue;
+          }
+        }
+
+        if (!spec) {
+          console.warn(`No valid specification file found for ${providerName}`);
+          // Move to the next provider
+          continue;
+        }
+
+        // Add the spec to our collection
+        specs.set(providerName, spec);
+      }
+
+      if (specs.size === 0) {
+        throw new Error('No valid OpenAPI specifications found in provider directories');
+      }
+
+      return specs;
+    } catch (error) {
+      throw new Error(`Failed to load OpenAPI specs: ${(error as Error).message}`);
     }
   }
 
@@ -53,12 +88,19 @@ export class OpenAPISpecLoader {
       for (const [method, operation] of Object.entries(pathItem)) {
         if (method === "parameters" || !operation) continue
 
+        // Skip invalid HTTP methods
+        if (!["get", "post", "put", "patch", "delete", "options", "head"].includes(method.toLowerCase())) {
+          console.log(`Skipping non-HTTP method "${method}" for path ${path}`);
+          continue;
+        }
+
         const op = operation as OpenAPIV3.OperationObject
         // Create a clean tool ID by removing the leading slash and replacing special chars
         const cleanPath = path.replace(/^\//, "").replace(/\{([^}]+)\}/g, "$1")
         const toolId = `${method.toUpperCase()}-${cleanPath}`.replace(/[^a-zA-Z0-9-]/g, "-")
 
         let nameSource = op.operationId || op.summary || `${method.toUpperCase()} ${path}`
+        // TODO: Change tool name to avoid conflicts (add OPENAPI spec name prefix)
         const name = this.abbreviateOperationId(nameSource)
 
         const tool: Tool = {
