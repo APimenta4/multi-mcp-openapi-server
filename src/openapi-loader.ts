@@ -5,28 +5,38 @@ import yaml from "js-yaml"
 import crypto from "crypto"
 import path from "path"
 import { REVISED_COMMON_WORDS_TO_REMOVE, WORD_ABBREVIATIONS } from "./abbreviations.js"
+import { ExtendedTool } from "./tools-manager.js"
+
+/**
+ * Structure to hold OpenAPI document and associated HTTP headers
+ */
+export interface PreparedTool {
+  specification: OpenAPIV3.Document;
+  headers: Record<string, string> | undefined;
+  baseUrl: string;
+}
 
 /**
  * Class to load and parse OpenAPI specifications
  */
-export class OpenAPISpecLoader {
+export class OpenAPISpecsLoader {
   /**
    * Load an OpenAPI specification from a file path or URL
    */
-  async loadOpenAPISpec(specDirPath: string): Promise<Map<string, [OpenAPIV3.Document, string]>> {
-    const specs = new Map<string, [OpenAPIV3.Document, string]>();
+  async loadOpenAPISpecs(specsDirPath: string): Promise<Map<string, PreparedTool>> {
+    const specifications = new Map<string, PreparedTool>();
 
     try {
-      const stats = await stat(specDirPath);
-      if (!stats.isDirectory()) {
-        throw new Error(`${specDirPath} is not a directory`);
+      const pathStatistics = await stat(specsDirPath);
+      if (!pathStatistics.isDirectory()) {
+        throw new Error(`${specsDirPath} is not a directory`);
       }
 
       // Get all provider directories
-      const entries = await readdir(specDirPath, { withFileTypes: true });
+      const entries = await readdir(specsDirPath, { withFileTypes: true });
       const subdirs = entries.filter(entry => entry.isDirectory());
       if (subdirs.length === 0) {
-        throw new Error(`No provider directories found in ${specDirPath}`);
+        throw new Error(`No provider directories found in ${specsDirPath}`);
       }
 
       const specFormats = [
@@ -38,68 +48,80 @@ export class OpenAPISpecLoader {
       // Process each subdirectory
       for (const subdir of subdirs) {
         const providerName = subdir.name;
-        const providerDir = path.join(specDirPath, providerName);
+        const providerDir = path.join(specsDirPath, providerName);
 
-        let spec: OpenAPIV3.Document | null = null;
+        // Get headers and baseUrl from config.json
+        const configFilePath = path.join(providerDir, 'config.json');
+        let headers: Record<string, string> | undefined = undefined;
+        let baseUrl: string;
+        try {
+          await access(configFilePath);
+          const configContent = await readFile(configFilePath, 'utf-8');
+          const config = JSON.parse(configContent);
+          
+          if (!config.baseUrl) {
+            throw new Error(`No baseUrl provided in config.json for ${providerName}`);
+          }
+          
+          baseUrl = config.baseUrl;
+          if (config.headers) {
+            headers = config.headers;
+          }
+        } catch (error) {
+          throw new Error(`Failed to read config.json for ${providerName}: ${(error as Error).message}`);
+        }
 
-        // Try each format until we find one that works (json, yaml, yml)
-        for (const format of specFormats){
+        // Get OpenAPI specification from .json, .yaml, or .yml file
+        let specification: OpenAPIV3.Document | null = null;
+
+        // Try each format until we find one that works
+        for (const format of specFormats) {
           const filePath = path.join(providerDir, `specification.${format.extension}`);
           try {
             const content = await readFile(filePath, 'utf-8');
-            spec = format.parse(content) as OpenAPIV3.Document;
+            specification = format.parse(content) as OpenAPIV3.Document;
             break; // Found and successfully parsed a file
           } catch (error) {
             // File doesn't exist or couldn't be parsed, continue to next format
-            console.log("HERE" + error)
             continue;
           }
         }
 
-        if (!spec) {
+        if (!specification) {
           console.warn(`No valid specification file found for ${providerName}`);
           // Move to the next provider
           continue;
         }
 
-        // Get headers from config.json
-        let headers
-        const configFilePath = path.join(providerDir, 'config.json');
-        try {
-          await access(configFilePath);
-          const configContent = await readFile(configFilePath, 'utf-8');
-          const config = JSON.parse(configContent);
-          if (config.headers) {
-             headers = config.headers;
-          }
-        } catch (error) {
-          console.warn(`No config.json file found for ${providerName}`);
-        }
+        const preparedTool: PreparedTool = {
+          specification,
+          headers,
+          baseUrl,
+        };
 
-        // Add the spec to our collection with potentially undefined headers
-        specs.set(providerName, [spec, headers]);
+        specifications.set(providerName, preparedTool);
       }
 
-      if (specs.size === 0) {
+      if (specifications.size === 0) {
         throw new Error('No valid OpenAPI specifications found in provider directories');
       }
 
-      return specs;
+      return specifications;
     } catch (error) {
-      throw new Error(`Failed to load OpenAPI specs: ${(error as Error).message}`);
+      throw new Error(`Failed to load OpenAPI specifications: ${(error as Error).message}`);
     }
   }
 
   /**
    * Parse an OpenAPI specification into a map of tools
    */
-  parseOpenAPISpec(providerName: string, receivedTool: [OpenAPIV3.Document, string]): Map<string, Tool> {
-    const tools = new Map<string, Tool>()
+  parseOpenAPISpec(providerName: string, preparedTool: PreparedTool): Map<string, ExtendedTool> {
+    const tools = new Map<string, ExtendedTool>()
 
-    const spec = receivedTool[0]
+    const specification = preparedTool.specification;
 
     // Convert each OpenAPI path to an MCP tool
-    for (const [path, pathItem] of Object.entries(spec.paths)) {
+    for (const [path, pathItem] of Object.entries(specification.paths)) {
       if (!pathItem) continue
 
       for (const [method, operation] of Object.entries(pathItem)) {
@@ -107,7 +129,7 @@ export class OpenAPISpecLoader {
 
         // Skip invalid HTTP methods
         if (!["get", "post", "put", "patch", "delete", "options", "head"].includes(method.toLowerCase())) {
-          console.log(`Skipping non-HTTP method "${method}" for path ${path}`);
+          console.warn(`Skipping non-HTTP method "${method}" for path ${path}`);
           continue;
         }
 
@@ -118,23 +140,29 @@ export class OpenAPISpecLoader {
 
         let nameSource = op.operationId || op.summary || `${method.toUpperCase()} ${path}`
         const name = this.abbreviateOperationId(nameSource)
-        
-        if (!spec.servers?.length) {
-          throw new Error(`No server url defined in OpenAPI specification for provider ${providerName}`);
-        }
-        const url = spec.servers[0].url
-        
-        const tool: Tool = {
+
+        // const tool: Tool = {
+        //   // Prefix with provider name to avoid tool naming conflicts
+        //   // This is the name provided to the AI Agents
+        //   name: `${providerName}-${name}`,
+        //   description: op.description || `Make a ${method.toUpperCase()} request to ${path}`,
+        //   inputSchema: {
+        //     type: "object",
+        //     properties: {},
+        //   },
+        // }
+
+        const tool: ExtendedTool = {
           // Prefix with provider name to avoid tool naming conflicts
+          // This is the name provided to the AI Agents
           name: `${providerName}-${name}`,
-          // TODO: url and headers doesnt belong in Tool. find a better way to do this
-          url,
           description: op.description || `Make a ${method.toUpperCase()} request to ${path}`,
-          headers: receivedTool[1],
           inputSchema: {
             type: "object",
             properties: {},
           },
+          url: preparedTool.baseUrl,
+          headers: preparedTool.headers,
         }
 
         // Add parameters from operation
@@ -162,10 +190,10 @@ export class OpenAPISpecLoader {
             tool.inputSchema.required = requiredParams
           }
         }
+
         tools.set(toolId, tool)
       }
     }
-
     return tools
   }
 

@@ -1,36 +1,39 @@
 import { Tool } from "@modelcontextprotocol/sdk/types.js"
-import { OpenAPISpecLoader } from "./openapi-loader"
+import { OpenAPISpecsLoader } from "./openapi-loader"
 import { OpenAPIMCPServerConfig } from "./config"
 
 /**
  * Manages the tools available in the MCP server
  */
+
+export interface ExtendedTool extends Tool {
+  url: string;
+  headers: Record<string, string> | undefined;
+}
+
 export class ToolsManager {
-  private tools: Map<string, Tool> = new Map()
-  private specLoader: OpenAPISpecLoader
+  private tools: Map<string, ExtendedTool> = new Map()
+  private specsLoader: OpenAPISpecsLoader
 
   constructor(private config: OpenAPIMCPServerConfig) {
-    this.specLoader = new OpenAPISpecLoader()
+    this.specsLoader = new OpenAPISpecsLoader()
   }
 
   /**
    * Initialize tools from the OpenAPI specification
    */
   async initialize(): Promise<void> {
-    const specs = await this.specLoader.loadOpenAPISpec(this.config.specsDirectory)
+    // Load OpenAPI specifications from the specified directory
+    const preparedTools = await this.specsLoader.loadOpenAPISpecs(this.config.specsDirectory)
 
-    for (const [providerName, spec] of specs.entries()) {
+    for (const [providerName, preparedTool] of preparedTools.entries()) {
       // Parse tools from each OpenAPI specification
-      // spec should be the first element in the touple
-      const skibidi = spec[0]
-      const parsedTools = this.specLoader.parseOpenAPISpec(providerName, spec)
+      const parsedTools = this.specsLoader.parseOpenAPISpec(providerName, preparedTool)
 
       // Add tools to the manager
       for (const [toolId, tool] of parsedTools.entries()) {
         this.tools.set(toolId, tool)
         console.log(`[${providerName}] Added tool: ${toolId} (${tool.name})`)
-        // print all "tool" attributes
-        console.log(`[${providerName}] Tool attributes: ${JSON.stringify(tool, null, 2)}`)
       }
     }
   }
@@ -46,7 +49,7 @@ export class ToolsManager {
   /**
    * Find a tool by ID or name
    */
-  findTool(idOrName: string): { toolId: string; tool: Tool } | undefined {
+  findTool(idOrName: string): { toolId: string; tool: ExtendedTool } | undefined {
     // Try to find by ID first
     if (this.tools.has(idOrName)) {
       return { toolId: idOrName, tool: this.tools.get(idOrName)! }

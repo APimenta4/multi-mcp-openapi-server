@@ -17,15 +17,12 @@ export class ApiClient {
    * @param params - Parameters for the API call
    * @returns The API response data
    */
-  async executeApiCall(toolId: string, params: Record<string, any>, url: string, headers: string): Promise<any> {
+  async executeApiCall(baseUrl: string, path: string, method: string, headers: Record<string, string> | undefined, params: Record<string, any>): Promise<any> {
     try {
-      // Parse method and path from the tool ID
-      const { method, path } = this.parseToolId(toolId)
-
       // Prepare request configuration
       const config: any = {
         method: method.toLowerCase(),
-        baseURL: url,
+        baseURL: baseUrl,
         url: path,
         headers: headers,
       }
@@ -60,18 +57,6 @@ export class ApiClient {
       }
       throw error
     }
-  }
-
-  /**
-   * Parse a tool ID into HTTP method and path
-   *
-   * @param toolId - Tool ID in format METHOD-path-parts
-   * @returns Object containing method and path
-   */
-  private parseToolId(toolId: string): { method: string; path: string } {
-    const [method, ...pathParts] = toolId.split("-")
-    const path = "/" + pathParts.join("/").replace(/-/g, "/")
-    return { method, path }
   }
 
   /**
