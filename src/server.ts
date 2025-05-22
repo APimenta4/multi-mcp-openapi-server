@@ -69,9 +69,7 @@ export class OpenAPIServer {
 
       try {
         // Execute the API call
-        // TODO: these parameters are gonna be extended
-        const { method, path } = this.toolsManager.parseToolId(toolId)
-        const result = await this.apiClient.executeApiCall(tool.url, path, method, tool.headers, params || {})
+        const result = await this.apiClient.executeApiCall(tool, params || {})
 
         return {
           content: [

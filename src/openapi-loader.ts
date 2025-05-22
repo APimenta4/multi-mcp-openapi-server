@@ -58,11 +58,11 @@ export class OpenAPISpecsLoader {
           await access(configFilePath);
           const configContent = await readFile(configFilePath, 'utf-8');
           const config = JSON.parse(configContent);
-          
+
           if (!config.baseUrl) {
             throw new Error(`No baseUrl provided in config.json for ${providerName}`);
           }
-          
+
           baseUrl = config.baseUrl;
           if (config.headers) {
             headers = config.headers;
@@ -127,8 +127,9 @@ export class OpenAPISpecsLoader {
       for (const [method, operation] of Object.entries(pathItem)) {
         if (method === "parameters" || !operation) continue
 
+        const formattedMethod = method.toLowerCase()
         // Skip invalid HTTP methods
-        if (!["get", "post", "put", "patch", "delete", "options", "head"].includes(method.toLowerCase())) {
+        if (!["get", "post", "put", "patch", "delete", "options", "head"].includes(formattedMethod)) {
           console.warn(`Skipping non-HTTP method "${method}" for path ${path}`);
           continue;
         }
@@ -151,35 +152,34 @@ export class OpenAPISpecsLoader {
             properties: {},
           },
           url: preparedTool.baseUrl,
+          path: path,
           headers: preparedTool.headers,
+          method: formattedMethod,
+          params: {},
         }
 
+        // TODO: fix this params and inputschema bullshit
         // Add parameters from operation
         if (op.parameters) {
-          const requiredParams: string[] = []
-
           for (const param of op.parameters) {
             if ("name" in param && "in" in param) {
               const paramSchema = param.schema as OpenAPIV3.SchemaObject
               if (tool.inputSchema && tool.inputSchema.properties) {
-                tool.inputSchema.properties[param.name] = {
+                const paramObject: any = {
                   type: paramSchema.type || "string",
                   description: param.description || `${param.name} parameter`,
                 }
-              }
-              // Add required parameters to our temporary array
-              if (param.required === true) {
-                requiredParams.push(param.name)
+                tool.inputSchema.properties[param.name] = paramObject
+                paramObject.in = param.in || "query"
+                paramObject.required = param.required || false
+                tool.params = tool.params || {};
+                tool.params[param.name] = paramObject
               }
             }
           }
-
-          // Only add the required array if there are required parameters
-          if (requiredParams.length > 0 && tool.inputSchema) {
-            tool.inputSchema.required = requiredParams
-          }
         }
 
+        console.log(JSON.stringify(tool, null, 2))
         tools.set(toolId, tool)
       }
     }

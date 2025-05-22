@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosError } from "axios"
+import { ExtendedTool } from "./tools-manager.js"
 
 /**
  * Client for making API calls to the backend service
@@ -17,23 +18,41 @@ export class ApiClient {
    * @param params - Parameters for the API call
    * @returns The API response data
    */
-  async executeApiCall(baseUrl: string, path: string, method: string, headers: Record<string, string> | undefined, params: Record<string, any>): Promise<any> {
+  async executeApiCall(tool: ExtendedTool, params: Record<string, any>): Promise<any> {
     try {
       // Prepare request configuration
       const config: any = {
-        method: method.toLowerCase(),
-        baseURL: baseUrl,
-        url: path,
-        headers: headers,
+        method: tool.method,
+        baseURL: tool.url,
+        url: tool.path,
+        headers: tool.headers,
       }
 
-      // Handle parameters based on HTTP method
-      if (["get", "delete", "head", "options"].includes(method.toLowerCase())) {
-        // For GET-like methods, parameters go in the query string
-        config.params = this.processQueryParams(params)
-      } else {
-        // For POST-like methods, parameters go in the request body
-        config.data = params
+      // TODO: fix inputschema and params bullshit
+      for (const [paramName, value] of Object.entries(params)) {
+        // Check if the parameter is in the tool's input schema
+        if (tool.inputSchema.properties && tool.inputSchema.properties[paramName]) {
+          // Check if the parameter is required and not provided
+          if (tool.params && tool.params[paramName] && value === undefined) {
+            throw new Error(`Missing required parameter: ${paramName}`)
+          }
+
+          if(tool.params && tool.params[paramName]){
+            if(tool.params[paramName].in === "query"){
+              // Process query parameters
+              config.params = this.processQueryParams({
+                ...config.params,
+                [paramName]: value,
+              })
+            }else{
+              // Process url parameters
+              config.url = config.url.replace(
+                `{${paramName}}`,
+                encodeURIComponent(value),
+              )
+            }
+          }
+        }
       }
 
       // Execute the request

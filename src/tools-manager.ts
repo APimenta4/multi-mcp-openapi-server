@@ -9,6 +9,9 @@ import { OpenAPIMCPServerConfig } from "./config"
 export interface ExtendedTool extends Tool {
   url: string;
   headers: Record<string, string> | undefined;
+  path: string;
+  method: string;
+  params: Record<string, any> | undefined;
 }
 
 export class ToolsManager {
