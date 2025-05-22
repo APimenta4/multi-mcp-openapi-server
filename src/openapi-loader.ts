@@ -161,6 +161,7 @@ export class OpenAPISpecsLoader {
         // TODO: fix this params and inputschema bullshit
         // Add parameters from operation
         if (op.parameters) {
+          const requiredParams: string[] = []
           for (const param of op.parameters) {
             if ("name" in param && "in" in param) {
               const paramSchema = param.schema as OpenAPIV3.SchemaObject
@@ -170,12 +171,26 @@ export class OpenAPISpecsLoader {
                   description: param.description || `${param.name} parameter`,
                 }
                 tool.inputSchema.properties[param.name] = paramObject
-                paramObject.in = param.in || "query"
-                paramObject.required = param.required || false
+                // Create a separate param metadata object for OpenAPI params handling
                 tool.params = tool.params || {};
-                tool.params[param.name] = paramObject
+                tool.params[param.name] = {
+                  type: paramSchema.type || "string",
+                  description: param.description || `${param.name} parameter`,
+                  in: param.in || "query",
+                  required: param.required || false
+                }
+              }
+              // Add required parameters to our temporary array
+              if (param.required === true) {
+                requiredParams.push(param.name)
               }
             }
+
+          }
+
+          // Only add the required array if there are required parameters
+          if (requiredParams.length > 0 && tool.inputSchema) {
+            tool.inputSchema.required = requiredParams
           }
         }
 
